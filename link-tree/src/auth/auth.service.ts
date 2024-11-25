@@ -3,7 +3,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuthDto } from './dto';
+import { AuthDto, SignInDto } from './dto';
 import * as argon from 'argon2';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { JwtService } from '@nestjs/jwt';
@@ -27,11 +27,12 @@ export class AuthService {
         data: {
           email: dto.email,
           hash,
+          username: dto.username,
         },
       });
 
       //return the saved user
-      return this.signToken(user.id, user.email);
+      return this.signToken(user.id, user.email, user.username);
     } catch (error) {
       if (
         error instanceof
@@ -47,7 +48,7 @@ export class AuthService {
     }
   }
 
-  async signin(dto: AuthDto) {
+  async signin(dto: SignInDto) {
     //find user by email
     const user =
       await this.prisma.user.findUnique({
@@ -75,16 +76,18 @@ export class AuthService {
       );
 
     //send back the user
-    return this.signToken(user.id, user.email);
+    return this.signToken(user.id, user.email, user.username);
   }
 
   async signToken(
     userId: number,
     email: string,
+    username:string,
   ): Promise<{ access_token: string }> {
     const payload = {
       sub: userId,
       email,
+      username,
     };
     const secret = this.config.get('JWT_SECRET');
 

@@ -7,9 +7,13 @@ export class UserService {
   constructor(private prisma: PrismaService) {}
 
   async editUser(
-    userId: number,
-    dto: EditUserDto,
+userId: number, dto: EditUserDto, file?: Express.Multer.File,
   ) {
+
+    if (file) {
+      dto.profileImage = file.path;
+    }
+
     const user = await this.prisma.user.update({
       where: {
         id: userId,

@@ -5,6 +5,7 @@ import {
 import {
   CreateLinkDto,
   EditLinkDto,
+  UpdatePosDto,
 } from './dto';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -17,6 +18,10 @@ export class LinkService {
       where: {
         userId,
       },
+      orderBy: [
+        { position: 'asc' },  // Sort first by position
+        { createAt: 'asc' },  // Then sort by created time in case of position conflicts
+      ],
     });
   }
 
@@ -72,6 +77,42 @@ export class LinkService {
       },
     });
   }
+
+    // Method to update the positions of all links
+    async updatePos(userId: number, links: UpdatePosDto[]) {
+      // Extract the link ids from the body to verify if all belong to the user
+      const linkIds = links.map((link) => link.id);
+  
+      // Get the links belonging to the user from the database
+      const userLinks = await this.prisma.link.findMany({
+        where: {
+          userId,
+          id: { in: linkIds },
+        },
+      });
+  
+      // Check if all provided links belong to the user
+      if (userLinks.length !== links.length) {
+        throw new ForbiddenException('Some links do not belong to the user');
+      }
+  
+      // Start a transaction to update positions
+      const updatePromises = links.map((link) =>
+        this.prisma.link.update({
+          where: { id: link.id },
+          data: { position: link.position },
+        }),
+      );
+  
+      // Execute all updates in one transaction
+      await this.prisma.$transaction(updatePromises);
+  
+      // Return the updated list of links, ordered by position
+      return this.prisma.link.findMany({
+        where: { userId },
+        orderBy: { position: 'asc' },
+      });
+    }
 
   async deleteLinkById(
     userId: number,

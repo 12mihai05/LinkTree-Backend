@@ -18,6 +18,7 @@ import {
   CreateLinkDto,
   EditLinkDto,
 } from './dto';
+import { UpdatePosDto } from './dto/edit-position.dto';
 
 @UseGuards(JwtGuard)
 @Controller('links')
@@ -49,6 +50,14 @@ export class LinkController {
       userId,
       dto,
     );
+  }
+
+  @Patch('positions')
+  async updatePos(
+    @GetUser('id') userId: number,
+    @Body() links: UpdatePosDto[], // Expecting an array of links with their new positions
+  ) {
+    return this.linkService.updatePos(userId, links);
   }
 
   @Patch(':id')

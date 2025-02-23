@@ -18,6 +18,7 @@ model User {
   profileImage String?
   username     String   @unique
   links        Link[]
+  folders      Folder[]
 
   @@map("users")
 }
@@ -30,8 +31,27 @@ model Link {
   description String?
   link        String
   userId      Int
+  folderId    Int?
   position    Int?
-  user        User     @relation(fields: [userId], references: [id])
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder      Folder?  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
 
   @@map("links")
+}
+
+model Folder {
+  id          Int      @id @default(autoincrement())
+  createAt    DateTime @default(now())
+  updateAt    DateTime @updatedAt
+  title       String
+  userId      Int
+  parentId    Int?
+  position    Int?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent      Folder?  @relation("ParentFolder", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Folder[] @relation("ParentFolder")
+  links       Link[]
+
+  @@map("folders")
 }

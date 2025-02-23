@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   CreateLinkDto,
@@ -13,37 +14,136 @@ import { PrismaService } from '../prisma/prisma.service';
 export class LinkService {
   constructor(private prisma: PrismaService) {}
 
-  getLinks(userId: number) {
+  getLinks(userId: number, folderId?: number) {
     return this.prisma.link.findMany({
       where: {
         userId,
+        folderId, // Optionally filter by folderId
       },
       orderBy: [
-        { position: 'asc' },  // Sort first by position
-        { createAt: 'asc' },  // Then sort by created time in case of position conflicts
+        { position: 'asc' },
+        { createAt: 'asc' },
       ],
     });
   }
 
-  getLinksById(userId: number, linkId: number) {
-    return this.prisma.link.findFirst({
+  async getOtherUserLinks(
+    username: string,
+    folderId?: number,
+  ) {
+    const otherUserId =
+      await this.prisma.user.findUnique({
+        where: { username },
+        select: { id: true }, // Get only the user ID
+      });
+
+    return this.prisma.link.findMany({
       where: {
-        id: linkId,
+        userId: Number(otherUserId.id),
+        folderId,
+      },
+      orderBy: [
+        { position: 'asc' },
+        { createAt: 'asc' },
+      ],
+    });
+  }
+
+  async getLinksFromFolder(
+    userId: number,
+    folderId: number,
+  ) {
+    // Check if the folder exists
+    const folder =
+      await this.prisma.folder.findFirst({
+        where: { id: folderId, userId },
+      });
+
+    if (!folder) {
+      throw new NotFoundException(
+        'Folder not found',
+      );
+    }
+
+    return this.prisma.link.findMany({
+      where: {
+        folderId: folder.id,
         userId,
       },
+      orderBy: [
+        { position: 'asc' },
+        { createAt: 'asc' },
+      ],
     });
+  }
+
+  async getLinkById(
+    userId: number,
+    linkId: number,
+  ) {
+    const link = await this.prisma.link.findFirst(
+      {
+        where: {
+          id: linkId,
+          userId,
+        },
+      },
+    );
+
+    if (!link) {
+      throw new NotFoundException(
+        'Link not found',
+      );
+    }
+
+    return link;
   }
 
   async createLink(
     userId: number,
     dto: CreateLinkDto,
+    req: Express.Request,
   ) {
+    // Validate folder existence if provided
+    if (dto.folderId) {
+      const folder =
+        await this.prisma.folder.findFirst({
+          where: { id: dto.folderId, userId },
+        });
+
+      if (!folder) {
+        throw new NotFoundException(
+          'Folder not found',
+        );
+      }
+    }
+
     const link = await this.prisma.link.create({
       data: {
         userId,
         ...dto,
       },
     });
+
+    // Update session with new link
+    req.session.allItems.push({
+      ...link,
+      type: 'link',
+    });
+
+    req.session.allItems.sort(
+      (a, b) =>
+        (a.position ?? Infinity) -
+          (b.position ?? Infinity) ||
+        new Date(a.createAt).getTime() -
+          new Date(b.createAt).getTime(),
+    );
+
+    console.log(
+      'Updated session.allItems:',
+      req.session.allItems,
+    );
+
     return link;
   }
 
@@ -52,15 +152,10 @@ export class LinkService {
     linkId: number,
     dto: EditLinkDto,
   ) {
-    //get the link by id
     const link =
       await this.prisma.link.findUnique({
-        where: {
-          id: linkId,
-        },
+        where: { id: linkId },
       });
-
-    //check if user owns the link
 
     if (!link || link.userId !== userId) {
       throw new ForbiddenException(
@@ -69,64 +164,20 @@ export class LinkService {
     }
 
     return this.prisma.link.update({
-      where: {
-        id: linkId,
-      },
-      data: {
-        ...dto,
-      },
+      where: { id: linkId },
+      data: { ...dto },
     });
   }
-
-    // Method to update the positions of all links
-    async updatePos(userId: number, links: UpdatePosDto[]) {
-      // Extract the link ids from the body to verify if all belong to the user
-      const linkIds = links.map((link) => link.id);
-  
-      // Get the links belonging to the user from the database
-      const userLinks = await this.prisma.link.findMany({
-        where: {
-          userId,
-          id: { in: linkIds },
-        },
-      });
-  
-      // Check if all provided links belong to the user
-      if (userLinks.length !== links.length) {
-        throw new ForbiddenException('Some links do not belong to the user');
-      }
-  
-      // Start a transaction to update positions
-      const updatePromises = links.map((link) =>
-        this.prisma.link.update({
-          where: { id: link.id },
-          data: { position: link.position },
-        }),
-      );
-  
-      // Execute all updates in one transaction
-      await this.prisma.$transaction(updatePromises);
-  
-      // Return the updated list of links, ordered by position
-      return this.prisma.link.findMany({
-        where: { userId },
-        orderBy: { position: 'asc' },
-      });
-    }
 
   async deleteLinkById(
     userId: number,
     linkId: number,
+    req: Express.Request,
   ) {
-    //get the link by id
     const link =
       await this.prisma.link.findUnique({
-        where: {
-          id: linkId,
-        },
+        where: { id: linkId },
       });
-
-    //check if user owns the link
 
     if (!link || link.userId !== userId) {
       throw new ForbiddenException(
@@ -134,10 +185,52 @@ export class LinkService {
       );
     }
 
+    // Delete the link
     await this.prisma.link.delete({
-      where: {
-        id: linkId,
-      },
+      where: { id: linkId },
+    });
+
+    // Remove the link from session
+    if (req.session.allItems) {
+      req.session.allItems =
+        req.session.allItems.filter(
+          (item) => item.id !== linkId,
+        );
+    }
+  }
+
+  // Move link to another folder
+  async moveLinkToAnotherFolder(
+    userId: number,
+    linkId: number,
+    folderId: number,
+  ) {
+    const link =
+      await this.prisma.link.findUnique({
+        where: { id: linkId },
+      });
+
+    if (!link || link.userId !== userId) {
+      throw new ForbiddenException(
+        'Access to resource denied',
+      );
+    }
+
+    const folder =
+      await this.prisma.folder.findUnique({
+        where: { id: folderId },
+      });
+
+    if (!folder || folder.userId !== userId) {
+      throw new ForbiddenException(
+        'Folder not found or not owned by user',
+      );
+    }
+
+    // Move the link by updating its folderId
+    return this.prisma.link.update({
+      where: { id: linkId },
+      data: { folderId },
     });
   }
 }

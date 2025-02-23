@@ -13,6 +13,11 @@ const user_module_1 = require("./user/user.module");
 const link_module_1 = require("./link/link.module");
 const prisma_module_1 = require("./prisma/prisma.module");
 const config_1 = require("@nestjs/config");
+const foldernpx_controller_1 = require("./nest/foldernpx/foldernpx.controller");
+const folder_service_1 = require("./folder/folder.service");
+const folder_controller_1 = require("./folder/folder.controller");
+const folder_module_1 = require("./folder/folder.module");
+const items_module_1 = require("./items/items.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -26,7 +31,14 @@ exports.AppModule = AppModule = __decorate([
             user_module_1.UserModule,
             link_module_1.LinkModule,
             prisma_module_1.PrismaModule,
+            folder_module_1.FolderModule,
+            items_module_1.ItemsModule,
         ],
+        controllers: [
+            foldernpx_controller_1.FoldernpxController,
+            folder_controller_1.FolderController,
+        ],
+        providers: [folder_service_1.FolderService],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

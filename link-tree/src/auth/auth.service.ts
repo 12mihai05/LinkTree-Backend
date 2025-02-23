@@ -8,6 +8,8 @@ import * as argon from 'argon2';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import * as dotenv from 'dotenv';
+import { sortItemsByPositionAndDate } from '../utils/sortItems';
 
 @Injectable()
 export class AuthService {
@@ -17,11 +19,9 @@ export class AuthService {
     private config: ConfigService,
   ) {}
 
+  // Handle user registration
   async signup(dto: AuthDto) {
-    //generate the password hash
-    const hash = await argon.hash(dto.password);
-
-    //save the new user in the db
+    const hash = await argon.hash(dto.password); // Hash the password
     try {
       const user = await this.prisma.user.create({
         data: {
@@ -30,77 +30,58 @@ export class AuthService {
           username: dto.username,
         },
       });
-
-      //return the saved user
-      return this.signToken(user.id, user.email, user.username);
+      return this.signToken(user.id, user.email, user.username); // Return JWT token
     } catch (error) {
-      if (
-        error instanceof
-        PrismaClientKnownRequestError
-      ) {
-        if (error.code === 'P2002') {
-          throw new ForbiddenException(
-            'Credentials Taken',
-          );
-        }
+      if (error instanceof PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ForbiddenException('Credentials Taken'); // Handle duplicate credentials
       }
       throw error;
     }
   }
 
-  async signin(dto: SignInDto) {
-    //find user by email
-    const user =
-      await this.prisma.user.findUnique({
-        where: {
-          email: dto.email, // Querying by user id
-        },
-      });
+  // Handle user sign-in
+  async signin(dto: SignInDto, req: Express.Request) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (!user) throw new ForbiddenException('Credentials Incorrect'); // User not found
 
-    //if user doews not exist throw exception
-    if (!user)
-      throw new ForbiddenException(
-        'Credentials Incorrrect',
-      );
+    const pwMatches = await argon.verify(user.hash, dto.password);
+    if (!pwMatches) throw new ForbiddenException('Credentials Incorrect'); // Invalid password
 
-    //compare password
-    const pwMatches = await argon.verify(
-      user.hash,
-      dto.password,
-    );
+    // Fetch links and folders
+    const links = await this.prisma.link.findMany({
+      where: { userId: user.id, folderId: null },
+      orderBy: [{ position: 'asc' }, { createAt: 'asc' }],
+    });
 
-    //if password incorrect throw exception
-    if (!pwMatches)
-      throw new ForbiddenException(
-        'Credentials Incorrrect',
-      );
+    const folders = await this.prisma.folder.findMany({
+      where: { userId: user.id, parentId: null },
+      orderBy: [{ position: 'asc' }, { createAt: 'asc' }],
+    });
 
-    //send back the user
-    return this.signToken(user.id, user.email, user.username);
+    // Combine and sort links and folders
+    const allItems = [...links, ...folders];
+    const sortedItems = sortItemsByPositionAndDate(allItems);
+
+    // Store sorted items in session
+    req.session.allItems = sortedItems;
+
+    return this.signToken(user.id, user.email, user.username); // Return JWT token
   }
 
-  async signToken(
-    userId: number,
-    email: string,
-    username:string,
-  ): Promise<{ access_token: string }> {
-    const payload = {
-      sub: userId,
-      email,
-      username,
-    };
+  // Generate JWT token
+  async signToken(userId: number, email: string, username: string): Promise<{ access_token: string }> {
+    dotenv.config();
+    const sessionDuration = this.config.get('SESSION_DURATION');
+    const payload = { sub: userId, email, username };
     const secret = this.config.get('JWT_SECRET');
 
-    const token = await this.jwt.signAsync(
-      payload,
-      {
-        expiresIn: '15m',
-        secret: secret,
-      },
-    );
+    const token = await this.jwt.signAsync(payload, {
+      expiresIn: sessionDuration / 1000,
+      secret: secret,
+    });
 
-    return {
-      access_token: token,
-    };
+    return { access_token: token };
   }
 }

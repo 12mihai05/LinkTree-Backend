@@ -5,12 +5,14 @@ export const multerOptions = {
   storage: diskStorage({
     // Using `path.join` to construct the correct file path
     destination: (req, file, cb) => {
-      cb(null, './profile-images');  // Define the storage folder
+      cb(null, './profile-images'); // Define the storage folder
     },
     filename: (req, file, cb) => {
       try {
         const timestamp = Date.now(); // Add timestamp to filename
-        const fileExtension = extname(file.originalname); // Get file extension
+        const fileExtension = extname(
+          file.originalname,
+        ); // Get file extension
         const uniqueFileName = `${timestamp}${fileExtension}`; // Generate unique filename
 
         // Construct the final file path, and it will automatically use single backslashes on Windows
@@ -25,10 +27,15 @@ export const multerOptions = {
   },
   fileFilter: (req, file, cb) => {
     // Allow only image file types
-    if (file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
+    if (
+      file.mimetype.match(/\/(jpg|jpeg|png)$/)
+    ) {
       cb(null, true);
     } else {
-      cb(new Error('Unsupported file type'), false);
+      cb(
+        new Error('Unsupported file type'),
+        false,
+      );
     }
   },
 };

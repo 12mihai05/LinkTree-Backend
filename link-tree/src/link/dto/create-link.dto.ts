@@ -1,10 +1,15 @@
-import { IsNotEmpty, IsOptional, IsString } from "class-validator";
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateLinkDto {
   @IsString()
   @IsNotEmpty()
   title: string;
-  
+
   @IsString()
   @IsOptional()
   description?: string;
@@ -12,4 +17,8 @@ export class CreateLinkDto {
   @IsString()
   @IsNotEmpty()
   link: string;
+
+  @IsNumber()
+  @IsOptional()
+  folderId?: number;
 }

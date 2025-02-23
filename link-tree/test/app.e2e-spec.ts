@@ -11,9 +11,16 @@ import { EditUserDto } from '../src/user/dto';
 import {
   CreateLinkDto,
   EditLinkDto,
+  UpdatePosDto,
 } from 'src/link/dto';
+import {
+  CreateFolderDto,
+  EditFolderDto,
+} from 'src/folder/dto';
+import * as fs from 'fs';
+import * as path from 'path';
 
-describe('App e2e', () => {
+describe('Auth e2e', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -33,8 +40,8 @@ describe('App e2e', () => {
     await app.listen(3333);
 
     prisma = app.get(PrismaService);
-
     await prisma.cleanDb();
+
     pactum.request.setBaseUrl(
       'http://localhost:3333',
     );
@@ -47,6 +54,7 @@ describe('App e2e', () => {
   describe('Auth', () => {
     const dto: AuthDto = {
       email: 'email@email.com',
+      username: 'User1',
       password: 'pass123',
     };
 
@@ -78,7 +86,7 @@ describe('App e2e', () => {
           .expectStatus(400);
       });
 
-      it('should signup', () => {
+      it('should signup successfully', () => {
         return pactum
           .spec()
           .post('/auth/signup')
@@ -115,13 +123,13 @@ describe('App e2e', () => {
           .expectStatus(400);
       });
 
-      it('should signin', () => {
+      it('should signin successfully', () => {
         return pactum
           .spec()
           .post('/auth/signin')
           .withBody(dto)
           .expectStatus(200)
-          .stores('userAt', 'access_token');
+          .stores('userAt', 'access_token'); // Store the access token for further requests
       });
     });
   });
@@ -140,21 +148,130 @@ describe('App e2e', () => {
     });
 
     describe('Edit User', () => {
-      it('should edit user', () => {
+      it('should edit user with profile image', async () => {
         const dto: EditUserDto = {
           firstName: 'Mihai',
           email: 'email@email.com',
         };
+
+        const filePath = path.join(
+          __dirname,
+          'profile.jpg',
+        ); // Ensure this file exists in your test directory
+        const fileBuffer =
+          fs.readFileSync(filePath);
+
         return pactum
           .spec()
           .patch('/users')
           .withHeaders({
             Authorization: 'Bearer $S{userAt}',
           })
-          .withBody(dto)
+          .withMultiPartFormData(
+            'firstName',
+            dto.firstName,
+          )
+          .withMultiPartFormData(
+            'email',
+            dto.email,
+          )
+          .withMultiPartFormData({
+            field: 'profileImage', // Field name as expected by your backend
+            content: fileBuffer, // File content as Buffer
+            filename: 'profile.jpg', // File name
+            contentType: 'image/jpeg', // MIME type
+          })
           .expectStatus(200)
           .expectBodyContains(dto.firstName)
           .expectBodyContains(dto.email);
+      });
+    });
+  });
+
+  describe('Folder', () => {
+    describe('Get Folders', () => {
+      it('should get all folders', () => {
+        return pactum
+          .spec()
+          .get('/folders')
+          .withHeaders({
+            Authorization: 'Bearer $S{userAt}',
+          })
+          .expectStatus(200)
+          .expectBody([]); // Expecting empty list if no folders exist
+      });
+    });
+
+    describe('Create Folder', () => {
+      const dto: CreateFolderDto = {
+        title: 'New Folder',
+      };
+      it('should create folder', () => {
+        return pactum
+          .spec()
+          .post('/folders')
+          .withHeaders({
+            Authorization: 'Bearer $S{userAt}',
+          })
+          .withBody(dto)
+          .expectStatus(201)
+          .stores('folderId', 'id'); // Store the folderId for further use
+      });
+    });
+
+    describe('Get Folder by Id', () => {
+      it('should get folder by id', () => {
+        return pactum
+          .spec()
+          .get('/folders/{id}')
+          .withPathParams('id', '$S{folderId}') // Uses the stored folderId
+          .withHeaders({
+            Authorization: 'Bearer $S{userAt}',
+          })
+          .expectStatus(200)
+          .expectBodyContains('$S{folderId}');
+      });
+    });
+
+    describe('Edit Folder by Id', () => {
+      const dto: EditFolderDto = {
+        title: 'Updated Folder Title',
+      };
+      it('should edit folder', () => {
+        return pactum
+          .spec()
+          .patch('/folders/{id}')
+          .withPathParams('id', '$S{folderId}') // Uses the stored folderId
+          .withHeaders({
+            Authorization: 'Bearer $S{userAt}',
+          })
+          .withBody(dto)
+          .expectStatus(200)
+          .expectBodyContains(dto.title);
+      });
+    });
+
+    describe('Delete Folder by Id', () => {
+      it('should delete folder', () => {
+        return pactum
+          .spec()
+          .delete('/folders/{id}')
+          .withPathParams('id', '$S{folderId}') // Uses the stored folderId
+          .withHeaders({
+            Authorization: 'Bearer $S{userAt}',
+          })
+          .expectStatus(204); // Expecting no content after deletion
+      });
+
+      it('should get empty folder list', () => {
+        return pactum
+          .spec()
+          .get('/folders')
+          .withHeaders({
+            Authorization: 'Bearer $S{userAt}',
+          })
+          .expectStatus(200)
+          .expectJsonLength(0); // After deletion, expect an empty array
       });
     });
   });
@@ -169,14 +286,20 @@ describe('App e2e', () => {
             Authorization: 'Bearer $S{userAt}',
           })
           .expectStatus(200)
-          .expectBody([]);
+          .expectBody([]); // Check if it's empty
       });
     });
 
     describe('Create Link', () => {
+      const folderId = parseInt(
+        '$S{folderId}',
+        10,
+      );
+
       const dto: CreateLinkDto = {
         title: 'First Link',
         link: 'https://www.youtube.com/watch?v=GHTA143_b-s&t=9470s',
+        folderId: folderId, // Reference the folderId stored earlier
       };
       it('should create link', () => {
         return pactum
@@ -187,7 +310,7 @@ describe('App e2e', () => {
           })
           .withBody(dto)
           .expectStatus(201)
-          .stores('linkId', 'id');
+          .stores('linkId', 'id'); // Stores the created link id for further tests
       });
     });
 
@@ -200,41 +323,57 @@ describe('App e2e', () => {
             Authorization: 'Bearer $S{userAt}',
           })
           .expectStatus(200)
-          .expectJsonLength(1);
+          .expectJsonLength(1); // Expect one link after creation
       });
     });
+
+    // describe('Get Links from Folder', () => {
+    //   it('should get links from a folder', () => {
+    //     const folderId = parseInt('$S{folderId}', 10); // Ensure this is parsed as an integer
+    //     console.log('folderId:', folderId);
+
+    //     return pactum
+    //       .spec()
+    //       .get('/links/folder/${folderId}') // Path for getting links from a folder
+    //       .withPathParams('folderId', folderId) // Use the stored folderId
+    //       .withHeaders({
+    //         Authorization: 'Bearer $S{userAt}', // Authorization header
+    //       })
+    //       .expectStatus(200) // Expect the request to succeed
+    //       .expectJsonLength(1); // Expect at least one link in the folder
+    //   });
+    // });
 
     describe('Get Link by Id', () => {
       it('should get link by id', () => {
         return pactum
           .spec()
-          .get('/links/{id}')
-          .withPathParams('id', '$S{linkId}')
+          .get('/links/link/{id}')
+          .withPathParams('id', '$S{linkId}') // Uses the stored linkId
           .withHeaders({
             Authorization: 'Bearer $S{userAt}',
           })
           .expectStatus(200)
-          .expectBodyContains('$S{linkId}');
+          .expectBodyContains('$S{linkId}'); // Ensure the body contains the correct id
       });
     });
 
     describe('Edit Link by Id', () => {
       const dto: EditLinkDto = {
-        title:
-          'NestJs Course for Beginners - Create a REST API',
+        title: 'Updated NestJs Course',
         description:
-          'Learn NestJs by building a CRUD REST API with end-to-end tests using modern web development techniques. NestJs is a rapidly growing node js framework that helps build scalable and maintainable backend applications.',
+          'Updated description of the course.',
       };
       it('should edit link', () => {
         return pactum
           .spec()
           .patch('/links/{id}')
-          .withPathParams('id', '$S{linkId}')
+          .withPathParams('id', '$S{linkId}') // Uses the stored linkId
           .withHeaders({
             Authorization: 'Bearer $S{userAt}',
           })
-          .expectStatus(200)
           .withBody(dto)
+          .expectStatus(200)
           .expectBodyContains(dto.title)
           .expectBodyContains(dto.description);
       });
@@ -245,22 +384,22 @@ describe('App e2e', () => {
         return pactum
           .spec()
           .delete('/links/{id}')
-          .withPathParams('id', '$S{linkId}')
+          .withPathParams('id', '$S{linkId}') // Uses the stored linkId
           .withHeaders({
             Authorization: 'Bearer $S{userAt}',
           })
-          .expectStatus(204);
+          .expectStatus(204); // Expecting no content after deletion
       });
 
       it('should get empty link', () => {
         return pactum
-        .spec()
-        .get('/links')
-        .withHeaders({
-          Authorization: 'Bearer $S{userAt}',
-        })
-        .expectStatus(200)
-        .expectJsonLength(0);
+          .spec()
+          .get('/links')
+          .withHeaders({
+            Authorization: 'Bearer $S{userAt}',
+          })
+          .expectStatus(200)
+          .expectJsonLength(0); // After deletion, expect an empty array
       });
     });
   });

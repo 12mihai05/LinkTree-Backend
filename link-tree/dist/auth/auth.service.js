@@ -16,6 +16,8 @@ const argon = require("argon2");
 const library_1 = require("@prisma/client/runtime/library");
 const jwt_1 = require("@nestjs/jwt");
 const config_1 = require("@nestjs/config");
+const dotenv = require("dotenv");
+const sortItems_1 = require("../utils/sortItems");
 let AuthService = class AuthService {
     constructor(prisma, jwt, config) {
         this.prisma = prisma;
@@ -29,46 +31,50 @@ let AuthService = class AuthService {
                 data: {
                     email: dto.email,
                     hash,
+                    username: dto.username,
                 },
             });
-            return this.signToken(user.id, user.email);
+            return this.signToken(user.id, user.email, user.username);
         }
         catch (error) {
-            if (error instanceof
-                library_1.PrismaClientKnownRequestError) {
-                if (error.code === 'P2002') {
-                    throw new common_1.ForbiddenException('Credentials Taken');
-                }
+            if (error instanceof library_1.PrismaClientKnownRequestError && error.code === 'P2002') {
+                throw new common_1.ForbiddenException('Credentials Taken');
             }
             throw error;
         }
     }
-    async signin(dto) {
+    async signin(dto, req) {
         const user = await this.prisma.user.findUnique({
-            where: {
-                email: dto.email,
-            },
+            where: { email: dto.email },
         });
         if (!user)
-            throw new common_1.ForbiddenException('Credentials Incorrrect');
+            throw new common_1.ForbiddenException('Credentials Incorrect');
         const pwMatches = await argon.verify(user.hash, dto.password);
         if (!pwMatches)
-            throw new common_1.ForbiddenException('Credentials Incorrrect');
-        return this.signToken(user.id, user.email);
+            throw new common_1.ForbiddenException('Credentials Incorrect');
+        const links = await this.prisma.link.findMany({
+            where: { userId: user.id, folderId: null },
+            orderBy: [{ position: 'asc' }, { createAt: 'asc' }],
+        });
+        const folders = await this.prisma.folder.findMany({
+            where: { userId: user.id, parentId: null },
+            orderBy: [{ position: 'asc' }, { createAt: 'asc' }],
+        });
+        const allItems = [...links, ...folders];
+        const sortedItems = (0, sortItems_1.sortItemsByPositionAndDate)(allItems);
+        req.session.allItems = sortedItems;
+        return this.signToken(user.id, user.email, user.username);
     }
-    async signToken(userId, email) {
-        const payload = {
-            sub: userId,
-            email,
-        };
+    async signToken(userId, email, username) {
+        dotenv.config();
+        const sessionDuration = this.config.get('SESSION_DURATION');
+        const payload = { sub: userId, email, username };
         const secret = this.config.get('JWT_SECRET');
         const token = await this.jwt.signAsync(payload, {
-            expiresIn: '15m',
+            expiresIn: sessionDuration / 1000,
             secret: secret,
         });
-        return {
-            access_token: token,
-        };
+        return { access_token: token };
     }
 };
 exports.AuthService = AuthService;

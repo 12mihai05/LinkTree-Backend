@@ -1,10 +1,13 @@
-import { IsNotEmpty, IsOptional, IsString } from "class-validator";
+import {
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class EditLinkDto {
   @IsString()
   @IsOptional()
   title?: string;
-  
+
   @IsString()
   @IsOptional()
   description?: string;

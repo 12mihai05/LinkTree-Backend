@@ -2,6 +2,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthDto, SignInDto } from './dto';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { ChangePasswordDto } from './dto/change-password.dto';
 export declare class AuthService {
     private prisma;
     private jwt;
@@ -15,5 +16,8 @@ export declare class AuthService {
     }>;
     signToken(userId: number, email: string, username: string): Promise<{
         access_token: string;
+    }>;
+    changePassword(dto: ChangePasswordDto): Promise<{
+        message: string;
     }>;
 }

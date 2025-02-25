@@ -10,6 +10,9 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as dotenv from 'dotenv';
 import { sortItemsByPositionAndDate } from '../utils/sortItems';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import * as emailValidator from 'email-validator';
+
 
 @Injectable()
 export class AuthService {
@@ -83,5 +86,48 @@ export class AuthService {
     });
 
     return { access_token: token };
+  }
+
+  async changePassword(dto: ChangePasswordDto) {
+    // Find user by ID
+     let user;
+
+    if (emailValidator.validate(dto.identifier)) {
+      // Find user by email
+      user = await this.prisma.user.findUnique({
+        where: { email: dto.identifier },
+      });
+    } else{
+      // Find user by username
+      user = await this.prisma.user.findUnique({
+        where: { username: dto.identifier },
+      });
+    }
+  
+    if (!user) throw new ForbiddenException('User not found');
+  
+    // Verify old password
+    const pwMatches = await argon.verify(user.hash, dto.password);
+    if (!pwMatches) throw new ForbiddenException('Incorrect old password');
+  
+    // Hash new password
+    const newHash = await argon.hash(dto.newPassword);
+  
+    // Update password in the database
+    if (emailValidator.validate(dto.identifier)) {
+      // Find user by email
+      user = await this.prisma.user.update({
+        where: { email: dto.identifier },
+        data: { hash: newHash },
+      });
+    } else{
+      // Find user by username
+      user = await this.prisma.user.update({
+        where: { username: dto.identifier },
+        data: { hash: newHash },
+      });
+    }
+  
+    return { message: 'Password changed successfully' };
   }
 }

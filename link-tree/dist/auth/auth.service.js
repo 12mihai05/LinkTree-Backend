@@ -18,6 +18,7 @@ const jwt_1 = require("@nestjs/jwt");
 const config_1 = require("@nestjs/config");
 const dotenv = require("dotenv");
 const sortItems_1 = require("../utils/sortItems");
+const emailValidator = require("email-validator");
 let AuthService = class AuthService {
     constructor(prisma, jwt, config) {
         this.prisma = prisma;
@@ -75,6 +76,38 @@ let AuthService = class AuthService {
             secret: secret,
         });
         return { access_token: token };
+    }
+    async changePassword(dto) {
+        let user;
+        if (emailValidator.validate(dto.identifier)) {
+            user = await this.prisma.user.findUnique({
+                where: { email: dto.identifier },
+            });
+        }
+        else {
+            user = await this.prisma.user.findUnique({
+                where: { username: dto.identifier },
+            });
+        }
+        if (!user)
+            throw new common_1.ForbiddenException('User not found');
+        const pwMatches = await argon.verify(user.hash, dto.password);
+        if (!pwMatches)
+            throw new common_1.ForbiddenException('Incorrect old password');
+        const newHash = await argon.hash(dto.newPassword);
+        if (emailValidator.validate(dto.identifier)) {
+            user = await this.prisma.user.update({
+                where: { email: dto.identifier },
+                data: { hash: newHash },
+            });
+        }
+        else {
+            user = await this.prisma.user.update({
+                where: { username: dto.identifier },
+                data: { hash: newHash },
+            });
+        }
+        return { message: 'Password changed successfully' };
     }
 };
 exports.AuthService = AuthService;

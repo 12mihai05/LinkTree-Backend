@@ -19,12 +19,13 @@ async function bootstrap() {
     });
     const config = app.get(config_1.ConfigService);
     const sessionDuration = config.get('SESSION_DURATION');
-    const sessionSecret = config.get('SESSION_SECRET');
+    const sessionSecret = config.get('SESSION_KEY');
+    console.log('Session Secret:', sessionDuration);
     app.use(session({
         secret: sessionSecret,
         resave: false,
         saveUninitialized: false,
-        cookie: { maxAge: sessionDuration },
+        cookie: { maxAge: Number(sessionDuration) },
     }));
     await app.listen(3333);
 }

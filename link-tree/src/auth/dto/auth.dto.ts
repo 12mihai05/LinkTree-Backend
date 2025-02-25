@@ -2,6 +2,7 @@ import {
   IsEmail,
   IsNotEmpty,
   IsString,
+  Length,
 } from 'class-validator';
 
 export class AuthDto {
@@ -15,5 +16,6 @@ export class AuthDto {
 
   @IsString()
   @IsNotEmpty()
+  @Length(6, 20)
   password: string;
 }

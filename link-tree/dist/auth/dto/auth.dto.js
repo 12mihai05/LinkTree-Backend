@@ -27,6 +27,7 @@ __decorate([
 __decorate([
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.Length)(6, 20),
     __metadata("design:type", String)
 ], AuthDto.prototype, "password", void 0);
 //# sourceMappingURL=auth.dto.js.map
